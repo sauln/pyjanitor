@@ -1,0 +1,706 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>janitor.utils &#8212; pyjanitor  documentation</title>
+    <link rel="stylesheet" href="../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/jquery.js"></script>
+    <script src="../../_static/underscore.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    <script src="../../_static/language_data.js"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script async="async" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <script type="text/x-mathjax-config">MathJax.Hub.Config({"tex2jax": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true, "ignoreClass": "document", "processClass": "math|output_area"}})</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for janitor.utils</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Miscellaneous internal PyJanitor helper functions.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">functools</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+<span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">product</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+
+<span class="kn">from</span> <span class="nn">.errors</span> <span class="kn">import</span> <span class="n">JanitorError</span>
+
+
+<span class="k">def</span> <span class="nf">check</span><span class="p">(</span><span class="n">varname</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">expected_types</span><span class="p">:</span> <span class="nb">list</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    One-liner syntactic sugar for checking types.</span>
+
+<span class="sd">    Should be used like this::</span>
+
+<span class="sd">        check(&#39;x&#39;, x, [int, float])</span>
+
+<span class="sd">    :param varname: The name of the variable.</span>
+<span class="sd">    :param value: The value of the varname.</span>
+<span class="sd">    :param expected_types: The types we expect the item to be.</span>
+<span class="sd">    :returns: TypeError if data is not the expected type.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">is_expected_type</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">expected_types</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">t</span><span class="p">):</span>
+            <span class="n">is_expected_type</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">break</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_expected_type</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="s2">&quot;</span><span class="si">{varname}</span><span class="s2"> should be one of </span><span class="si">{expected_types}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                <span class="n">varname</span><span class="o">=</span><span class="n">varname</span><span class="p">,</span> <span class="n">expected_types</span><span class="o">=</span><span class="n">expected_types</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_clean_accounting_column</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Perform the logic for the `cleaning_style == &quot;accounting&quot;` attribute.</span>
+
+<span class="sd">    This is a private function, not intended to be used outside of</span>
+<span class="sd">    ``currency_column_to_numeric``.</span>
+
+<span class="sd">    It is intended to be used in a pandas `apply` method.</span>
+
+<span class="sd">    :returns: An object with a cleaned column.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;)&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;(&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">y</span> <span class="o">==</span> <span class="s2">&quot;-&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.00</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_currency_column_to_numeric</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">cast_non_numeric</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Perform logic for changing cell values.</span>
+
+<span class="sd">    This is a private function intended to be used only in</span>
+<span class="sd">    ``currency_column_to_numeric``.</span>
+
+<span class="sd">    It is intended to be used in a pandas `apply` method, after being passed</span>
+<span class="sd">    through `partial`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">acceptable_currency_characters</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;-&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;1&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;2&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;3&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;4&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;5&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;6&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;7&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;8&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;9&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;0&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;ORIGINAL_NA&quot;</span>
+
+    <span class="k">if</span> <span class="n">cast_non_numeric</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">cast_non_numeric</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">check</span><span class="p">(</span>
+                <span class="s2">&quot;{</span><span class="si">%r</span><span class="s2">: </span><span class="si">%r</span><span class="s2">}&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">cast_non_numeric</span><span class="p">[</span><span class="n">x</span><span class="p">])),</span>
+                <span class="n">cast_non_numeric</span><span class="p">[</span><span class="n">x</span><span class="p">],</span>
+                <span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">cast_non_numeric</span><span class="p">[</span><span class="n">x</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">acceptable_currency_characters</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">acceptable_currency_characters</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_replace_empty_string_with_none</span><span class="p">(</span><span class="n">column_series</span><span class="p">):</span>
+    <span class="n">column_series</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">column_series</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">column_series</span>
+
+
+<span class="k">def</span> <span class="nf">_replace_original_empty_string_with_none</span><span class="p">(</span><span class="n">column_series</span><span class="p">):</span>
+    <span class="n">column_series</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">column_series</span> <span class="o">==</span> <span class="s2">&quot;ORIGINAL_NA&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">column_series</span>
+
+
+<span class="k">def</span> <span class="nf">_strip_underscores</span><span class="p">(</span>
+    <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">strip_underscores</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Strip underscores from DataFrames column names.</span>
+
+<span class="sd">    Underscores can be stripped from the beginning, end or both.</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        df = _strip_underscores(df, strip_underscores=&#39;left&#39;)</span>
+
+<span class="sd">    :param df: The pandas DataFrame object.</span>
+<span class="sd">    :param strip_underscores: (optional) Removes the outer underscores from all</span>
+<span class="sd">        column names. Default None keeps outer underscores. Values can be</span>
+<span class="sd">        either &#39;left&#39;, &#39;right&#39; or &#39;both&#39; or the respective shorthand &#39;l&#39;, &#39;r&#39;</span>
+<span class="sd">        and True.</span>
+<span class="sd">    :returns: A pandas DataFrame with underscores removed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
+        <span class="n">columns</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_strip_underscores_func</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">strip_underscores</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">df</span>
+
+
+<span class="k">def</span> <span class="nf">_strip_underscores_func</span><span class="p">(</span>
+    <span class="n">col</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">strip_underscores</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Strip underscores from a string.&quot;&quot;&quot;</span>
+    <span class="n">underscore_options</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;right&quot;</span><span class="p">,</span> <span class="s2">&quot;both&quot;</span><span class="p">,</span> <span class="s2">&quot;l&quot;</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">strip_underscores</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">underscore_options</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">JanitorError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;strip_underscores must be one of: </span><span class="si">{</span><span class="n">underscore_options</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">strip_underscores</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;l&quot;</span><span class="p">]:</span>
+        <span class="n">col</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">strip_underscores</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;right&quot;</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">]:</span>
+        <span class="n">col</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">strip_underscores</span> <span class="o">==</span> <span class="s2">&quot;both&quot;</span> <span class="ow">or</span> <span class="n">strip_underscores</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">col</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">col</span>
+
+
+<span class="k">def</span> <span class="nf">import_message</span><span class="p">(</span>
+    <span class="n">submodule</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">package</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">conda_channel</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">pip_install</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return warning if package is not found.</span>
+
+<span class="sd">    Generic message for indicating to the user when a function relies on an</span>
+<span class="sd">    optional module / package that is not currently installed. Includes</span>
+<span class="sd">    installation instructions. Used in `chemistry.py` and `biology.py`.</span>
+
+<span class="sd">    :param submodule: pyjanitor submodule that needs an external dependency.</span>
+<span class="sd">    :param package: External package this submodule relies on.</span>
+<span class="sd">    :param conda_channel: Conda channel package can be installed from,</span>
+<span class="sd">        if at all.</span>
+<span class="sd">    :param pip_install: Whether package can be installed via pip.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">is_conda</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">prefix</span><span class="p">,</span> <span class="s2">&quot;conda-meta&quot;</span><span class="p">))</span>
+    <span class="n">installable</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">is_conda</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">conda_channel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">installable</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">installation</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2"> cannot be installed via conda&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">installation</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;conda install -c </span><span class="si">{</span><span class="n">conda_channel</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">pip_install</span><span class="p">:</span>
+            <span class="n">installation</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;pip install </span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">installable</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">installation</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2"> cannot be installed via pip&quot;</span>
+
+    <span class="nb">print</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;To use the janitor submodule </span><span class="si">{</span><span class="n">submodule</span><span class="si">}</span><span class="s2">, you need to install &quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">.&quot;</span>
+    <span class="p">)</span>
+    <span class="nb">print</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">installable</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;To do so, use the following command:&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">installation</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">installation</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">idempotent</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Raises error if a function operating on a `DataFrame` is not idempotent,</span>
+<span class="sd">    that is, `func(func(df)) = func(df)` is not true for all `df`.</span>
+
+<span class="sd">    :param func: A python method.</span>
+<span class="sd">    :param df: A pandas `DataFrame`.</span>
+<span class="sd">    :param args: Positional arguments supplied to the method.</span>
+<span class="sd">    :param kwargs: Keyword arguments supplied to the method.</span>
+<span class="sd">    :raises ValueError: If `func` is found to not be idempotent for the given</span>
+<span class="sd">        `DataFrame` `df`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">func</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">==</span> <span class="n">func</span><span class="p">(</span>
+        <span class="n">func</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">),</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;Supplied function is not idempotent for the given &quot;</span> <span class="s2">&quot;DataFrame.&quot;</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">deprecated_alias</span><span class="p">(</span><span class="o">**</span><span class="n">aliases</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Used as a decorator when deprecating old function argument names, while</span>
+<span class="sd">    keeping backwards compatibility.</span>
+
+<span class="sd">    Implementation is inspired from `StackOverflow`_.</span>
+
+<span class="sd">    .. _StackOverflow: https://stackoverflow.com/questions/49802412/how-to-implement-deprecation-in-python-with-argument-alias</span>
+
+<span class="sd">    Functional usage example:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        @deprecated_alias(a=&#39;alpha&#39;, b=&#39;beta&#39;)</span>
+<span class="sd">        def simple_sum(alpha, beta):</span>
+<span class="sd">            return alpha + beta</span>
+
+<span class="sd">    :param aliases: Dictionary of aliases for a function&#39;s arguments.</span>
+<span class="sd">    :return: Your original function wrapped with the kwarg redirection</span>
+<span class="sd">        function.</span>
+<span class="sd">    &quot;&quot;&quot;</span>  <span class="c1"># noqa: E501</span>
+
+    <span class="k">def</span> <span class="nf">decorator</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+        <span class="nd">@functools</span><span class="o">.</span><span class="n">wraps</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="n">rename_kwargs</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">aliases</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">wrapper</span>
+
+    <span class="k">return</span> <span class="n">decorator</span>
+
+
+<span class="k">def</span> <span class="nf">refactored_function</span><span class="p">(</span><span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Used as a decorator when refactoring functions</span>
+
+<span class="sd">    Implementation is inspired from `Hacker Noon`_.</span>
+
+<span class="sd">    .. Hacker Noon: https://hackernoon.com/why-refactoring-how-to-restructure-python-package-51b89aa91987</span>
+
+<span class="sd">    Functional usage example:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        @refactored_function(</span>
+<span class="sd">            message=&quot;simple_sum() has been refactored. Use hard_sum() instead.&quot;</span>
+<span class="sd">        )</span>
+<span class="sd">        def simple_sum(alpha, beta):</span>
+<span class="sd">            return alpha + beta</span>
+
+<span class="sd">    :param message: Message to use in warning user about refactoring.</span>
+<span class="sd">    :return: Your original function wrapped with the kwarg redirection</span>
+<span class="sd">        function.</span>
+<span class="sd">    &quot;&quot;&quot;</span>  <span class="c1"># noqa: E501</span>
+
+    <span class="k">def</span> <span class="nf">decorator</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">emit_warning</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="ne">FutureWarning</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">emit_warning</span>
+
+    <span class="k">return</span> <span class="n">decorator</span>
+
+
+<span class="k">def</span> <span class="nf">rename_kwargs</span><span class="p">(</span><span class="n">func_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">aliases</span><span class="p">:</span> <span class="n">Dict</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Used to update deprecated argument names with new names. Throws a</span>
+<span class="sd">    TypeError if both arguments are provided, and warns if old alias is used.</span>
+
+<span class="sd">    Implementation is inspired from `StackOverflow`_.</span>
+
+<span class="sd">    .. _StackOverflow: https://stackoverflow.com/questions/49802412/how-to-implement-deprecation-in-python-with-argument-alias</span>
+
+<span class="sd">    :param func_name: name of decorated function.</span>
+<span class="sd">    :param kwargs: Arguments supplied to the method.</span>
+<span class="sd">    :param aliases: Dictionary of aliases for a function&#39;s arguments.</span>
+<span class="sd">    :return: Nothing; the passed `kwargs` are modified directly.</span>
+<span class="sd">    &quot;&quot;&quot;</span>  <span class="c1"># noqa: E501</span>
+    <span class="k">for</span> <span class="n">old_alias</span><span class="p">,</span> <span class="n">new_alias</span> <span class="ow">in</span> <span class="n">aliases</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">old_alias</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">new_alias</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">func_name</span><span class="si">}</span><span class="s2"> received both </span><span class="si">{</span><span class="n">old_alias</span><span class="si">}</span><span class="s2"> and </span><span class="si">{</span><span class="n">new_alias</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">old_alias</span><span class="si">}</span><span class="s2"> is deprecated; use </span><span class="si">{</span><span class="n">new_alias</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="ne">DeprecationWarning</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="n">new_alias</span><span class="p">]</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">old_alias</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">check_column</span><span class="p">(</span>
+    <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">old_column_names</span><span class="p">:</span> <span class="n">List</span><span class="p">,</span> <span class="n">present</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    One-liner syntactic sugar for checking the presence or absence of a column.</span>
+
+<span class="sd">    Should be used like this::</span>
+
+<span class="sd">        check(df, [&#39;a&#39;, &#39;b&#39;], present=True)</span>
+
+<span class="sd">    :param df: The name of the variable.</span>
+<span class="sd">    :param old_column_names: A list of column names we want to check to see if</span>
+<span class="sd">        present (or absent) in df.</span>
+<span class="sd">    :param present: If True (default), checks to see if all of old_column_names</span>
+<span class="sd">        are in df.columns. If False, checks that none of old_column_names are</span>
+<span class="sd">        in df.columns.</span>
+<span class="sd">    :returns: ValueError if data is not the expected type.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">column_name</span> <span class="ow">in</span> <span class="n">old_column_names</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">present</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">column_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">column_name</span><span class="si">}</span><span class="s2"> not present in dataframe columns!&quot;</span>
+                <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># Tests for exclusion</span>
+            <span class="k">if</span> <span class="n">column_name</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">column_name</span><span class="si">}</span><span class="s2"> already present in dataframe columns!&quot;</span>
+                <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">skipna</span><span class="p">(</span><span class="n">f</span><span class="p">:</span> <span class="n">Callable</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Decorator for escaping np.nan and None in a function</span>
+
+<span class="sd">    Should be used like this::</span>
+
+<span class="sd">        df[column].apply(skipna(transform))</span>
+
+<span class="sd">    or::</span>
+
+<span class="sd">        @skipna</span>
+<span class="sd">        def transform(x):</span>
+<span class="sd">            pass</span>
+
+<span class="sd">    :param f: the function to be wrapped</span>
+<span class="sd">    :returns: _wrapped, the wrapped function</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_wrapped</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">float</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="ow">or</span> <span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">_wrapped</span>
+
+
+<span class="k">def</span> <span class="nf">skiperror</span><span class="p">(</span>
+    <span class="n">f</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">return_x</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">return_val</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Decorator for escaping errors in a function</span>
+
+<span class="sd">    Should be used like this::</span>
+
+<span class="sd">        df[column].apply(</span>
+<span class="sd">            skiperror(transform, return_val=3, return_x=False))</span>
+
+<span class="sd">    or::</span>
+
+<span class="sd">        @skiperror(return_val=3, return_x=False)</span>
+<span class="sd">        def transform(x):</span>
+<span class="sd">            pass</span>
+
+<span class="sd">    :param f: the function to be wrapped</span>
+<span class="sd">    :param return_x: whether or not the original value that caused error</span>
+<span class="sd">        should be returned</span>
+<span class="sd">    :param return_val: the value to be returned when an error hits.</span>
+<span class="sd">        Ignored if return_x is True</span>
+<span class="sd">    :returns: _wrapped, the wrapped function</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_wrapped</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">return_x</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">x</span>
+            <span class="k">return</span> <span class="n">return_val</span>
+
+    <span class="k">return</span> <span class="n">_wrapped</span>
+
+
+<span class="k">def</span> <span class="nf">_check_instance</span><span class="p">(</span><span class="n">entry</span><span class="p">:</span> <span class="n">Dict</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Function to check instances in the expand_grid function.</span>
+<span class="sd">    This checks if entry is a dictionary,</span>
+<span class="sd">    checks the instance of value in key:value pairs in entry,</span>
+<span class="sd">    and makes changes to other types as deemed necessary.</span>
+<span class="sd">    Additionally, type-specific errors are raised if unsupported data types</span>
+<span class="sd">    are passed in as values in the entry dictionary.</span>
+<span class="sd">    How each type is handled, and their associated exceptions,</span>
+<span class="sd">    are pretty clear from the code.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># dictionary should not be empty</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">entry</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;passed dictionary cannot be empty&quot;</span><span class="p">)</span>
+
+    <span class="n">entry</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="c1"># If it is a NoneType, number, Boolean, or string,</span>
+        <span class="c1"># then wrap in a list</span>
+        <span class="n">key</span><span class="p">:</span> <span class="p">[</span><span class="n">value</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">bool</span><span class="p">,</span> <span class="nb">str</span><span class="p">))</span>
+        <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">set</span><span class="p">,</span> <span class="nb">range</span><span class="p">))</span>
+        <span class="k">else</span> <span class="n">value</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">entry</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+    <span class="p">}</span>
+
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">entry</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="c1"># exclude dicts:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Nested dictionaries are not allowed&quot;</span><span class="p">)</span>
+
+        <span class="c1"># process arrays</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;array cannot be empty&quot;</span><span class="p">)</span>
+
+        <span class="c1"># process series</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;passed Series cannot be empty&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="s2">&quot;`expand_grid` does not work with pd.MultiIndex&quot;</span>
+                <span class="p">)</span>
+        <span class="c1"># process dataframe</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;passed DataFrame cannot be empty&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="p">))</span> <span class="ow">or</span> <span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">MultiIndex</span><span class="p">)</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="s2">&quot;`expand_grid` does not work with pd.MultiIndex&quot;</span>
+                <span class="p">)</span>
+        <span class="c1"># process lists</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;passed Sequence cannot be empty&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">entry</span>
+
+
+<span class="k">def</span> <span class="nf">_grid_computation</span><span class="p">(</span><span class="n">entry</span><span class="p">:</span> <span class="n">Dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return the final output of the expand_grid function as a dataframe.</span>
+<span class="sd">     This kicks in after the ``_check_instance`` function is completed,</span>
+<span class="sd">     and essentially creates a cross join of the values in the `entry`</span>
+<span class="sd">     dictionary. If the `entry` dictionary is a collection of lists/tuples,</span>
+<span class="sd">     then `itertools.product` will be used for the cross join, before a</span>
+<span class="sd">    dataframe is created; if however, the `entry` contains a pandas dataframe</span>
+<span class="sd">    or a pandas series or a numpy array, then identical indices are created for</span>
+<span class="sd">    each entry and `pandas DataFrame join` is called to create the cross join.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># checks if the dictionary is only lists/tuples values and uses</span>
+    <span class="c1"># itertools.product. numpy meshgrid is faster, but requires homogenous</span>
+    <span class="c1"># data to appreciate the speed. Itertools product is efficient and</span>
+    <span class="c1"># suffices.</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">entry</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+    <span class="p">):</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+            <span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="n">value</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">entry</span><span class="o">.</span><span class="n">items</span><span class="p">())),</span> <span class="n">columns</span><span class="o">=</span><span class="n">entry</span>
+        <span class="p">)</span>
+    <span class="c1"># dictionary contains a mix of different types - dataframe/series/numpy/...</span>
+    <span class="c1"># so we check for each data type, convert to a Pandas dataframe, attach</span>
+    <span class="c1"># names to get unique columns, and set indices to each dataframe, so that</span>
+    <span class="c1"># cross joins can be generated.</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">box</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">entry</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+                <span class="n">box</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">value</span><span class="o">.</span><span class="n">add_prefix</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">_&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">set_index</span><span class="p">([[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)])</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                    <span class="n">box</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">value</span><span class="o">.</span><span class="n">to_frame</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">value</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span>
+                            <span class="p">[[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)]</span>
+                        <span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">box</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">value</span><span class="o">.</span><span class="n">to_frame</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span>
+                            <span class="p">[[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)]</span>
+                        <span class="p">)</span>
+                    <span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+                <span class="n">box</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                    <span class="o">.</span><span class="n">add_prefix</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">_&quot;</span><span class="p">)</span>
+                    <span class="o">.</span><span class="n">set_index</span><span class="p">([[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)])</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">box</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+                        <span class="n">value</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="n">index</span><span class="o">=</span><span class="p">([</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">box</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">box</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">first</span><span class="p">,</span> <span class="o">*</span><span class="n">rest</span> <span class="o">=</span> <span class="n">box</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">rest</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">result</span>
+
+
+<span class="k">def</span> <span class="nf">_complete_groupings</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">list_of_columns</span><span class="p">):</span>
+    <span class="c1"># this collects all the columns as individual labels, which will be</span>
+    <span class="c1"># used to set the index of the dataframe</span>
+    <span class="n">index_columns</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># this will collect all the values associated with the respective</span>
+    <span class="c1"># columns, and used to reindex the dataframe, to get the complete</span>
+    <span class="c1"># pairings</span>
+    <span class="n">reindex_columns</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">list_of_columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">,</span> <span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sd">&quot;&quot;&quot;Value must either be a column label, a list/tuple of columns or a</span>
+<span class="sd">                    dictionary where the keys are columns in the dataframe.&quot;&quot;&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">item</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;grouping cannot be empty&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">reindex_columns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">item</span><span class="p">]</span><span class="o">.</span><span class="n">array</span><span class="p">))</span>
+            <span class="n">index_columns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># this comes into play if we wish to input values that</span>
+            <span class="c1"># do not exist in the data, say years, or alphabets, or</span>
+            <span class="c1"># range of numbers</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">index_columns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">index_columns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">*</span><span class="n">item</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+                    <span class="n">item_contents</span> <span class="o">=</span> <span class="p">[</span>
+                        <span class="c1"># convert scalars to iterables; this is necessary</span>
+                        <span class="c1"># when creating combinations with itertools&#39; product</span>
+                        <span class="p">[</span><span class="n">value</span><span class="p">]</span>
+                        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">))</span>
+                        <span class="k">else</span> <span class="n">value</span>
+                        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">item</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                    <span class="p">]</span>
+                    <span class="n">reindex_columns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">item_contents</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">index_columns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+                <span class="n">item</span> <span class="o">=</span> <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">sub_column</span><span class="p">]</span><span class="o">.</span><span class="n">array</span> <span class="k">for</span> <span class="n">sub_column</span> <span class="ow">in</span> <span class="n">item</span><span class="p">)</span>
+                <span class="n">item</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="o">*</span><span class="n">item</span><span class="p">))</span>
+                <span class="n">reindex_columns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+    <span class="n">reindex_columns</span> <span class="o">=</span> <span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="n">reindex_columns</span><span class="p">)</span>
+    <span class="c1"># A list comprehension, coupled with itertools chain.from_iterable</span>
+    <span class="c1"># would likely be faster; I fear that it may hamper readability with</span>
+    <span class="c1"># nested list comprehensions; as such, I chose the for loop method.</span>
+    <span class="n">new_reindex_columns</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">reindex_columns</span><span class="p">:</span>
+        <span class="n">new_row</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">cell</span> <span class="ow">in</span> <span class="n">row</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+                <span class="n">new_row</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_row</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="n">new_reindex_columns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">new_row</span><span class="p">))</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">index_columns</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">df</span><span class="p">,</span> <span class="n">new_reindex_columns</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<p class="logo">
+  <a href="../../index.html">
+    <img class="logo" src="../../_static/logo_title.svg" alt="Logo"/>
+    
+  </a>
+</p>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../notebooks.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../reference/index.html">API Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../authors.html">Contributors</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, PyJanitor devs.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.2.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
